@@ -1,8 +1,8 @@
 import express, { Request, Response, NextFunction } from 'express';
 import dotenv from 'dotenv';
 import jwt from 'jsonwebtoken';
-import cors from 'cors';
-import morgan from 'morgan';
+import cors, { CorsOptions } from 'cors';
+// import morgan from 'morgan';
 import connectDB, { primaryDb } from './config/db.js';
 import connectRedis, { redisClient } from './config/redis.js';
 import expressAsyncHandler from 'express-async-handler';
@@ -18,11 +18,36 @@ const PORT: number = parseInt(process.env.PORT || '3002');
 
 app.use(express.json());
 
-app.use(cors({
-    origin: process.env.FRONTEND_BASE_URL
-}));
+// app.use(cors({
+//     origin: process.env.FRONTEND_BASE_URL
+// }));
 
-app.use(morgan(process.env.ENV!));
+const allowedOrigins: string[] = [];
+
+if (process.env.FRONTEND_BASE_URL) {
+    allowedOrigins.push(process.env.FRONTEND_BASE_URL);
+}
+
+if (process.env.ANOTHER_FRONTEND_URL) {
+    allowedOrigins.push(process.env.ANOTHER_FRONTEND_URL);
+}
+
+const corsOptions: CorsOptions = {
+    origin: (origin, callback) => {
+        // Allow requests with no origin (like mobile apps or curl requests)
+        if (!origin) return callback(null, true);
+        if (allowedOrigins.indexOf(origin) !== -1) {
+            callback(null, true);
+        } else {
+            callback(new Error('Not allowed by CORS'));
+        }
+    },
+    // Other options can be added here
+};
+
+app.use(cors(corsOptions));
+
+// app.use(morgan(process.env.ENV!));
 
 const StudentSchema = new mongoose.Schema({
 
@@ -75,13 +100,17 @@ export const adminAuthMiddleware = expressAsyncHandler(async (req: Request, res:
     }
 });
 
-app.get('/', (req: Request, res: Response) => {
+app.get('/health', (req: Request, res: Response) => {
     res.sendStatus(200);
 });
 app.post('/event', expressAsyncHandler(async (req: Request, res: Response) => {
     const { type, phoneNumber } = req.body;
-    if (type != EventType.FORM_HOME) {
-        await redisClient.sAdd(type, [phoneNumber]);
+    if (type == EventType.FORM_HOME) {
+        try {
+            await redisClient.sAdd(type, [phoneNumber]);
+        } catch (error) {
+            console.error(error);
+        }
     }
     res.sendStatus(200);
 }));
@@ -92,6 +121,7 @@ app.post('/event-auth', authMiddleware, expressAsyncHandler(async (req: Request,
     try {
         await redisClient.sAdd(type, req.phoneNumber);
     } catch (error) {
+        console.error(error);
     }
     res.sendStatus(200);
 }));
@@ -137,18 +167,24 @@ export const filterEvents = async (type: EventType, startingDate: string, ending
 
 app.post('/show-data', adminAuthMiddleware, expressAsyncHandler(async (req: Request, res: Response) => {
     const { type, startingDate, endingDate, startingTime, endingTime } = req.body;
-
     try {
         const data = await filterEvents(type, startingDate, endingDate, startingTime, endingTime);
         const processedData = [];
         for (let i = 0; i < data.length; i++) {
-            processedData.push({
-                type: data[i].type,
-                members: []
-            });
-            for (let j = 0; j < data[i].members.length; j++) {
-                const studentData = await studentModel.findOne({ phoneNumber: data[i].members[j] });
-                processedData[i].members.push(studentData);
+            if (type == EventType.FORM_HOME) {
+                processedData.push({
+                    type: data[i].type,
+                    members: data[i].members
+                });
+            } else {
+                processedData.push({
+                    type: data[i].type,
+                    members: []
+                });
+                for (let j = 0; j < data[i].members.length; j++) {
+                    const studentData = await studentModel.findOne({ phoneNumber: data[i].members[j] });
+                    processedData[i].members.push(studentData);
+                }
             }
         }
         res.status(200).json(processedData);
@@ -158,7 +194,9 @@ app.post('/show-data', adminAuthMiddleware, expressAsyncHandler(async (req: Requ
 }));
 
 app.use((err: any, req: Request, res: Response, next: NextFunction) => {
-    console.error(err);
+    if (!err.statusCode) {
+        console.error(err);
+    }
     // if statusCode is there it means that message will also be created by me
     // if statusCode is not there it means that message is not created by me its something else in this situation we want to send internal server error.
     res.status(err.statusCode ? err.statusCode : 500).json({ error: err.statusCode ? err.message : 'Internal Server Error.Please try again later.' });
