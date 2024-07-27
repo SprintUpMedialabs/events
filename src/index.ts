@@ -129,10 +129,11 @@ app.post('/event-auth', authMiddleware, expressAsyncHandler(async (req: Request,
 app.get('/process-data', adminAuthMiddleware, expressAsyncHandler(async (req: Request, res: Response) => {
     // const memberArray = [];
     try {
-        for (const eventType of Object.values(EventType)) {
-            const members = await redisClient.sMembers(eventType);
-            await (new Event({ type: eventType, members: members, creationDateTime: new Date().toISOString() })).save();
-            await redisClient.del(eventType);
+        const keys = await redisClient.keys("*");
+        for (const key of keys) {
+            const members = await redisClient.sMembers(key);
+            await (new Event({ type: key, members: members, creationDateTime: new Date().toISOString() })).save();
+            await redisClient.del(key);
         }
         res.status(200).send('ok');
     } catch (error) {
