@@ -127,7 +127,6 @@ app.post('/event-auth', authMiddleware, expressAsyncHandler(async (req: Request,
 }));
 
 app.get('/process-data', adminAuthMiddleware, expressAsyncHandler(async (req: Request, res: Response) => {
-    // const memberArray = [];
     try {
         const keys = await redisClient.keys("*");
         for (const key of keys) {
