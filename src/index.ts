@@ -151,9 +151,16 @@ export const filterEvents = async (type: EventType, startingDate: string, ending
     const startDateTime = toUTCDateTime(startingDate, startingTime);
     const endDateTime = toUTCDateTime(endingDate, endingTime);
 
+    let typeQuery: any;
+    if (type === 'LOCK_BUTTON_CLICK') {
+        typeQuery = { $regex: /LOCK_BUTTON_CLICK/ };
+    } else {
+        typeQuery = type;
+    }
+
     // Query to find events that match the criteria
     const events = await Event.find({
-        type: type,
+        type: typeQuery,
         creationDateTime:
         {
             $gte: startDateTime,
